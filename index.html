@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Litmus Tile Defense — Quiz & Difficulty</title>
+  <style>
+    :root {
+      --bg:#f5f7fb; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --accent:#4f46e5;
+      --red:#ef4444; --blue:#3b82f6; --neutral:#d1d5db;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR", Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+    .wrap { max-width: 1080px; margin: 24px auto; padding: 16px; }
+    .card { background: var(--card); border-radius: 18px; box-shadow: 0 10px 30px rgba(2,6,23,.08); padding: 18px; }
+    h1 { margin: 0 0 8px 0; font-size: 28px; letter-spacing: -0.01em; }
+    .lead { color: var(--muted); margin: 0 0 12px 0; }
+    .row { display: grid; grid-template-columns: 1fr; gap: 14px; }
+    .toolbar { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: start; }
+    .shelf {
+      display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap:10px;
+      background:#f8fafc; border:1px dashed #e2e8f0; padding:10px; border-radius:12px;
+    }
+    @media (max-width: 960px){ .shelf{ grid-template-columns: repeat(3, minmax(0,1fr)); } }
+    .item {
+      border:1px solid #e2e8f0; border-radius:12px; background:white; padding:8px; cursor:pointer; text-align:center;
+      display:flex; flex-direction:column; gap:6px; justify-content:center; align-items:center; min-height:84px;
+    }
+    .item .emoji { font-size: 22px; }
+    .item .name { font-weight:700; font-size:13px; }
+    .item .tag { font-size:12px; color:#64748b; }
+    .item.selected { outline:2px solid var(--accent); }
+    .controls { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+    button { border:0; padding:10px 14px; border-radius:12px; font-weight:700; cursor:pointer; background:#e2e8f0; color:#0f172a; }
+    button.primary { background: var(--accent); color: white; }
+    button.ghost { background: transparent; border: 1px solid #e2e8f0; }
+    button[disabled]{ opacity:.5; cursor:not-allowed; }
+    .stats { display:flex; gap:14px; flex-wrap:wrap; font-size:14px; color:var(--muted); }
+    .stat b { color:var(--ink); }
+    canvas { background: white; border-radius: 12px; border: 1px solid #e5e7eb; display:block; width:100%; height:auto; touch-action: none; }
+    .legend { display:flex; gap:10px; align-items:center; color:var(--muted); font-size:13px; }
+    .dot { width:14px; height:14px; border-radius:4px; border:1px solid #e5e7eb; }
+    .notice { background:#eef2ff; border:1px solid #c7d2fe; color:#3730a3; padding:10px 14px; border-radius:12px; }
+    .footer { margin-top: 14px; color: var(--muted); font-size: 12px; }
+    .pill { display:inline-block; padding:3px 8px; border-radius:999px; font-size:12px; border:1px solid #e2e8f0; color:#64748b; background:#f8fafc; }
+    /* Quiz modal */
+    .modal {
+      position: fixed; inset: 0; display:none; place-items:center; background: rgba(15,23,42,0.45);
+      z-index: 50;
+    }
+    .modal .box {
+      width: min(720px, 92vw); background: white; border-radius: 16px; padding: 18px;
+      box-shadow: 0 20px 50px rgba(2,6,23,.25);
+    }
+    .quiz-list { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-top:8px; }
+    @media (max-width: 720px){ .quiz-list{ grid-template-columns: 1fr; } }
+    .quiz-item { border:1px solid #e5e7eb; border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:6px; cursor:pointer; }
+    .quiz-item .big { font-size: 28px; }
+    .quiz-footer { display:flex; justify-content:space-between; align-items:center; margin-top:10px; font-size:13px; color:#64748b; }
+    .hint { font-size:12px; color:#64748b; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Litmus Tile Defense — Quiz & Difficulty</h1>
+      <p class="lead">아이템(레몬, 식초, 베이킹소다, 증류수 등)을 선택해 타일을 클릭/터치로 색을 바꾸세요. 게임 시작 전 <b>미니 퀴즈</b>를 맞추면 보너스를 받습니다.</p>
+
+      <div class="row">
+        <div class="notice">
+          <b>학습 포인트</b> · 산성(빨간) 예: 레몬🍋, 식초🧉, 탄산음료🥤 · 염기성(파란) 예: 베이킹소다🥣, 비누🧼, 세제🧴 · 중성(회색) 예: 증류수💧, 소금물🧂<br>
+          <span class="pill">확장 규칙</span> 퀴즈 보너스 · 혼합 오염(간혹 빨간 오염) · 시간 경과 시 오염 가속 · 중성 변환 추가 보너스
+        </div>
+
+        <div class="toolbar">
+          <div class="shelf" id="shelf"></div>
+          <div class="controls">
+            <button id="btn-start" class="primary">시작</button>
+            <button id="btn-reset" class="ghost">리셋</button>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat">선택: <b id="selName">-</b> <span class="pill" id="selTag">-</span></div>
+          <div class="stat">시간: <b id="time">60.0</b>s</div>
+          <div class="stat">점수: <b id="score">0</b></div>
+          <div class="stat">파란 비율: <b id="blueRatio">0%</b></div>
+          <div class="legend">
+            <span class="dot" style="background:#ef4444"></span> 산성
+            <span class="dot" style="background:#3b82f6"></span> 염기성
+            <span class="dot" style="background:#d1d5db"></span> 중성
+          </div>
+        </div>
+
+        <canvas id="game" width="1024" height="600" aria-label="litmus tile defense canvas"></canvas>
+
+        <div class="footer">© HTML5 Canvas Demo — 정적 파일 하나로 실행</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quiz Modal -->
+  <div id="quizModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="quizTitle">
+    <div class="box">
+      <h2 id="quizTitle" style="margin:0 0 6px 0;">퀴즈: 다음 중 <u>산성</u>인 것은?</h2>
+      <div class="hint">정답을 맞히면 시작 보너스(점수 +10 & 초기 오염 5칸 정화)를 드립니다.</div>
+      <div id="quizList" class="quiz-list"></div>
+      <div class="quiz-footer">
+        <span id="quizMsg">보기 중 하나를 선택하세요.</span>
+        <button id="quizSkip" class="ghost">건너뛰기</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+// ====== 아이템(실생활 물질) 목록 ======
+const ITEMS = [
+  { name:"레몬즙", tag:"산성", kind:"acid", emoji:"🍋", hint:"구연산 포함, 약산성" },
+  { name:"식초", tag:"산성", kind:"acid", emoji:"🧉", hint:"아세트산, 약산성" },
+  { name:"탄산음료", tag:"산성", kind:"acid", emoji:"🥤", hint:"탄산(H₂CO₃), 약산성" },
+  { name:"베이킹소다", tag:"염기성", kind:"base", emoji:"🥣", hint:"탄산수소나트륨, 약염기" },
+  { name:"비누물", tag:"염기성", kind:"base", emoji:"🧼", hint:"지방산염, 염기성 세정액" },
+  { name:"세제 용액", tag:"염기성", kind:"base", emoji:"🧴", hint:"계면활성제, 염기성" },
+  { name:"증류수", tag:"중성", kind:"neutral", emoji:"💧", hint:"이온 적음, 중성" },
+  { name:"소금물", tag:"중성", kind:"neutral", emoji:"🧂", hint:"NaCl 수용액, 중성에 가까움" },
+  { name:"우유", tag:"약산성", kind:"acid", emoji:"🥛", hint:"젖산·단백질로 약산성" },
+];
+
+// ====== 설정값 ======
+const CFG = {
+  cols: 12, rows: 8,
+  baseTick: 800,             // 기본 오염 주기(ms)
+  gameTime: 60,              // 제한시간(sec)
+  baseSpread: 1,             // 기본 오염 칸 수
+  redChance: 0.25,           // 혼합 오염: 빨간 오염 확률
+  neutralBonus: 3,           // 중성 변환 추가 보너스
+  quizCleanse: 5,            // 퀴즈 보너스: 정화 칸 수
+  quizScoreBonus: 10,        // 퀴즈 보너스 점수
+};
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const STATE = {
+  board: [], running:false, timeLeft:CFG.gameTime, score:0, combo:0,
+  selected: null, timerId:null, spreadId:null, startEpoch: null
+};
+
+function el(id){ return document.getElementById(id); }
+
+// 선반
+function renderShelf(){
+  const shelf = el('shelf');
+  shelf.innerHTML = "";
+  ITEMS.forEach((it, idx)=>{
+    const div = document.createElement('button');
+    div.type = "button";
+    div.className = "item";
+    div.setAttribute('data-idx', idx);
+    div.innerHTML = `<div class="emoji">${it.emoji}</div>
+                     <div class="name">${it.name}</div>
+                     <div class="tag">${it.tag}</div>`;
+    div.title = it.hint;
+    div.addEventListener('click', () => selectItem(idx));
+    shelf.appendChild(div);
+  });
+}
+
+function selectItem(i){
+  const it = ITEMS[i];
+  STATE.selected = it;
+  document.querySelectorAll('.item').forEach(el=> el.classList.remove('selected'));
+  const btn = document.querySelector(`.item[data-idx="${i}"]`);
+  if (btn) btn.classList.add('selected');
+  el('selName').textContent = it.name;
+  el('selTag').textContent = it.tag;
+  el('selTag').style.borderColor = it.kind==='acid' ? '#fecaca' : it.kind==='base' ? '#bfdbfe' : '#e5e7eb';
+  el('selTag').style.background  = it.kind==='acid' ? '#fef2f2' : it.kind==='base' ? '#eff6ff' : '#f8fafc';
+}
+
+function fitCanvas(){
+  const rect = canvas.getBoundingClientRect();
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.round(rect.width * ratio);
+  canvas.height = Math.round(rect.width * (CFG.rows/CFG.cols) * ratio);
+  draw();
+}
+new ResizeObserver(fitCanvas).observe(canvas);
+
+// 보드
+function idx(c,r){ return r*CFG.cols + c; }
+function randInt(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
+function choice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function initBoard(){
+  STATE.board = new Array(CFG.rows*CFG.cols).fill('neutral');
+  for (let i=0;i<CFG.cols;i++){ const r = randInt(0, CFG.rows-1); STATE.board[idx(i,r)]='blue'; }
+}
+function draw(){
+  const w=canvas.width, h=canvas.height;
+  const cellW=Math.floor(w/CFG.cols), cellH=Math.floor(h/CFG.rows);
+  ctx.clearRect(0,0,w,h);
+  for(let r=0;r<CFG.rows;r++){
+    for(let c=0;c<CFG.cols;c++){
+      const i=idx(c,r), v=STATE.board[i];
+      ctx.fillStyle = v==='red' ? '#ef4444' : v==='blue' ? '#3b82f6' : '#d1d5db';
+      ctx.fillRect(c*cellW, r*cellH, cellW, cellH);
+      ctx.strokeStyle = '#e5e7eb'; ctx.strokeRect(c*cellW+0.5, r*cellH+0.5, cellW-1, cellH-1);
+    }
+  }
+}
+
+// 좌표→셀
+function getCellFromXY(x,y){
+  const rect = canvas.getBoundingClientRect();
+  const c = Math.floor(( (x-rect.left)/rect.width ) * CFG.cols);
+  const r = Math.floor(( (y-rect.top) /rect.height) * CFG.rows);
+  if(c<0||c>=CFG.cols||r<0||r>=CFG.rows) return null;
+  return {c,r};
+}
+
+// 적용 규칙 + 중성 보너스
+function applySelectedToCell(c,r){
+  if(!STATE.selected) return;
+  const kind = STATE.selected.kind; // 'acid'|'base'|'neutral'
+  const i=idx(c,r); const cur=STATE.board[i];
+  let changed=false, bonus=0;
+  if(kind==='acid'){ changed = (cur!=='red'); STATE.board[i]='red'; }
+  else if(kind==='base'){ changed = (cur!=='blue'); STATE.board[i]='blue'; }
+  else { // neutral
+    changed = (cur!=='neutral'); 
+    if (cur!=='neutral') bonus += CFG.neutralBonus; 
+    STATE.board[i]='neutral';
+  }
+  if(changed){ STATE.combo=(STATE.combo||0)+1; STATE.score += 1 + Math.max(0, STATE.combo-1)*2 + bonus; }
+  else { STATE.combo=0; }
+  updateStats(); draw();
+}
+
+// 난이도 곡선: 경과 시간에 따라 오염 강도↑
+function currentSpreadCount(){
+  const elapsed = (Date.now() - STATE.startEpoch) / 1000; // sec
+  const phase = Math.floor(elapsed / 15); // 0,1,2,3...
+  return Math.min(1 + phase, 4); // 15초마다 +1, 최대 4칸
+}
+function currentTickMs(){
+  const elapsed = (Date.now() - STATE.startEpoch) / 1000;
+  const factor = 1 - Math.min(elapsed / CFG.gameTime, 0.9) * 0.5; // 최대 50% 빨라짐
+  return Math.max(250, Math.floor(CFG.baseTick * factor));
+}
+
+function spreadOnce(){
+  const k = currentSpreadCount();
+  for(let t=0;t<k;t++){
+    const i=randInt(0, STATE.board.length-1);
+    // 혼합 오염: 일정 확률로 빨간 오염
+    const red = Math.random() < CFG.redChance;
+    STATE.board[i] = red ? 'red' : 'blue';
+  }
+  draw(); checkWinLose();
+}
+
+function armSpreadTimer(){
+  clearInterval(STATE.spreadId);
+  STATE.spreadId = setInterval(()=>{
+    spreadOnce();
+    // 주기 가변: 다음 틱에 맞춰 재설정
+    armSpreadTimer();
+  }, currentTickMs());
+}
+
+function updateStats(){
+  const blueCount = STATE.board.filter(v=>v==='blue').length;
+  const ratio = blueCount / STATE.board.length;
+  el('blueRatio').textContent = Math.round(ratio*100)+'%';
+  el('score').textContent = STATE.score;
+}
+function checkWinLose(){
+  const blueCount = STATE.board.filter(v=>v==='blue').length;
+  const ratio = blueCount / STATE.board.length;
+  if(ratio>=0.8) return endGame(false, "파란 비율이 80%를 넘었습니다.");
+  if(STATE.timeLeft<=0){
+    if(ratio<=0.2) return endGame(true,"제한 시간 내 방어 성공!");
+    return endGame(false,"시간 초과!");
+  }
+}
+function endGame(win,msg){
+  STATE.running=false;
+  clearInterval(STATE.timerId); clearInterval(STATE.spreadId);
+  alert((win? "🎉 승리! " : "😵 실패! ") + msg + "  점수: " + STATE.score);
+  el('btn-start').disabled=false;
+}
+
+// 퀴즈: 산성 고르기
+function showQuiz(onDone){
+  // 보기: 산성 1개 + (염기성/중성) 2개
+  const acids = ITEMS.filter(x=>x.kind==='acid');
+  const others = ITEMS.filter(x=>x.kind!=='acid');
+  const answer = choice(acids);
+  const picks = [answer, ...shuffle(others).slice(0,2)];
+  shuffle(picks);
+  const list = el('quizList'); list.innerHTML = "";
+  picks.forEach(p=>{
+    const node = document.createElement('div');
+    node.className = "quiz-item";
+    node.innerHTML = `<div class="big">${p.emoji}</div><div><b>${p.name}</b></div><div style="color:#64748b;font-size:12px">${p.tag}</div>`;
+    node.addEventListener('click', ()=>{
+      if(p.kind==='acid'){
+        el('quizMsg').textContent = "정답! 보너스를 적용합니다.";
+        onDone(true);
+      } else {
+        el('quizMsg').textContent = "아쉬워요! 정답은 산성 물질입니다.";
+        onDone(false);
+      }
+      hideQuiz();
+    });
+    list.appendChild(node);
+  });
+  el('quizSkip').onclick = ()=>{ hideQuiz(); onDone(false); };
+  el('quizMsg').textContent = "보기 중 하나를 선택하세요.";
+  el('quizModal').style.display = "grid";
+}
+function hideQuiz(){ el('quizModal').style.display = "none"; }
+
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];} return a; }
+
+// 시작/리셋
+function startGame(){
+  showQuiz((won)=>{
+    STATE.running=true; STATE.timeLeft=CFG.gameTime; STATE.score=0; STATE.combo=0;
+    initBoard(); draw(); updateStats();
+    if(won){
+      STATE.score += CFG.quizScoreBonus;
+      // 초기 오염 5칸 정화
+      cleanseRandom(CFG.quizCleanse);
+      updateStats(); draw();
+    }
+    STATE.startEpoch = Date.now();
+    // 타이머
+    clearInterval(STATE.timerId);
+    const timeEl=el('time');
+    STATE.timerId=setInterval(()=>{
+      STATE.timeLeft=Math.max(0,STATE.timeLeft-0.1);
+      timeEl.textContent=STATE.timeLeft.toFixed(1);
+      if(STATE.timeLeft<=0){ clearInterval(STATE.timerId); checkWinLose(); }
+    },100);
+    // 오염(가변 주기)
+    armSpreadTimer();
+    el('btn-start').disabled=true;
+  });
+}
+function cleanseRandom(n){
+  const filled = STATE.board.map((v,i)=> ({v,i})).filter(o=>o.v!=='neutral').map(o=>o.i);
+  shuffle(filled);
+  for(let k=0;k<n && k<filled.length; k++){
+    STATE.board[filled[k]] = 'neutral';
+  }
+}
+function resetGame(){
+  STATE.running=false; clearInterval(STATE.timerId); clearInterval(STATE.spreadId);
+  STATE.timeLeft=CFG.gameTime; el('time').textContent=CFG.gameTime.toFixed(1);
+  STATE.score=0; STATE.combo=0; STATE.selected=null; STATE.startEpoch=null;
+  renderShelf(); drawBlank(); updateStats();
+  el('btn-start').disabled=false;
+  el('selName').textContent='-'; el('selTag').textContent='-';
+}
+function drawBlank(){
+  STATE.board = new Array(CFG.rows*CFG.cols).fill('neutral');
+  draw();
+}
+
+// 이벤트
+canvas.addEventListener('pointerdown', (e)=>{
+  if(!STATE.running) return;
+  const cell=getCellFromXY(e.clientX,e.clientY); if(!cell) return; applySelectedToCell(cell.c, cell.r);
+});
+el('btn-start').addEventListener('click', startGame);
+el('btn-reset').addEventListener('click', resetGame);
+
+function init(){
+  renderShelf();
+  drawBlank();
+  fitCanvas();
+  // 추천: 레몬즙 기본 선택
+  const firstAcid = ITEMS.findIndex(x=>x.kind==='acid');
+  if(firstAcid>=0) selectItem(firstAcid);
+}
+init();
+
+})();</script>
+</body>
+</html>
